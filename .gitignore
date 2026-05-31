@@ -16,3 +16,11 @@ dist/
 
 # 敏感配置
 .env
+
+# macOS
+.DS_Store
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
