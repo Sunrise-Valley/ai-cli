@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"name": "ai-cli",
+			"path": "."
+		},
+		{
+			"name": "citadel",
+			"path": "../../Downloads/citadel"
+		}
+	],
+	"settings": {}
+}

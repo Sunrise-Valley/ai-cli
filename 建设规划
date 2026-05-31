@@ -1,0 +1,244 @@
+# AI Agent 建设规划
+
+---
+
+## 整体架构
+
+```mermaid
+graph TB
+    subgraph 入口层
+        TUI["TUI / REPL<br/>JLine3 + fansi<br/>行编辑 · 历史 · 彩色"]
+        ARGS["命令行<br/>--resume · --no-tui · goal"]
+    end
+
+    subgraph 执行引擎
+        AE["AgentExecutor<br/>会话管理 · 记忆召回 · 任务编排"]
+    end
+
+    subgraph 规划层
+        PL["Planner<br/>生成 3-5 条候选路径<br/>按 confidence 自动选最优"]
+        VR["Verifier<br/>四维评分<br/>result · process · quality · compliance"]
+    end
+
+    subgraph LLM 接入
+        LC["LLMClient<br/>OpenAI 兼容协议<br/>DeepSeek · GPT-4o · 任意兼容模型"]
+    end
+
+    subgraph 工具层
+        TD["ToolDispatcher"]
+        T1["file_read<br/>分段流式读"]
+        T2["file_write<br/>覆盖写入"]
+        T3["file_edit<br/>精确字符串替换"]
+        T4["shell_exec<br/>超时 · 工作目录"]
+        T5["list_dir<br/>目录列表"]
+    end
+
+    subgraph 插件层
+        PR["PluginRegistry<br/>动态注册 · 线程安全"]
+        P1["WebSearchPlugin<br/>DuckDuckGo / Serper / SearXNG"]
+        P2["WebFetchPlugin<br/>抓取 URL · HTML→纯文本"]
+    end
+
+    subgraph 持久化层
+        MS["MemoryStore<br/>SQLite 树形记忆<br/>code/scala/zio …"]
+        MI["MemoryIndexer<br/>LLM 推断 key 层级<br/>自动写入记忆树"]
+        SS["SessionStore<br/>~/.ai-agent/sessions/<br/>断点续跑"]
+        EL["ExecutionLogger<br/>~/.ai-agent/logs/<br/>JSONL 事件日志"]
+        CFG["AgentConfig<br/>config.json > env > 默认值"]
+    end
+
+    TUI & ARGS --> AE
+    AE --> PL & VR & TD & PR & MI & SS & EL
+    PL --> LC
+    VR --> LC
+    MI --> LC & MS
+    LC -.->|"HTTP / OpenAI API"| 外部LLM["外部 LLM API"]
+    TD --> T1 & T2 & T3 & T4 & T5
+    PR --> P1 & P2
+    CFG -.->|加载配置| AE & LC & MS & PR
+```
+
+---
+
+## 执行流程
+
+```mermaid
+flowchart TD
+    INPUT(["用户输入目标"]) --> SESSION["创建 / 恢复 Session"]
+    SESSION --> RECALL["记忆召回\n从 SQLite 树搜索历史经验\n注入 System 消息"]
+    RECALL --> PLAN["Planner\n生成 3-5 条候选路径\n附 confidence 值，自动选最优"]
+    PLAN --> TREE["展开 TaskTree\n根节点 → 子任务 → 叶任务"]
+
+    TREE --> LOOP["遍历子任务"]
+    LOOP --> CACHED{"断点续跑?\n已完成?"}
+    CACHED -->|是，跳过| LOOP
+    CACHED -->|否，执行| EXEC["执行叶任务\nLLM 多轮对话 + 工具调用"]
+
+    EXEC --> VERIFY["Verifier 四维验证\nresult / process / quality / compliance"]
+
+    VERIFY -->|"compliance 否决\n一票"| VETO(["ComplianceVeto\n立即终止"])
+    VERIFY -->|"composite 分数退化\n< bestScore + threshold"| ROLLBACK["回滚最优结果"]
+    VERIFY -->|"通过\noverallPassed=true"| PASS["写入树形记忆\nMemoryIndexer"]
+    VERIFY -->|"失败 & 还有重试次数"| REPLAN["Replan\n替换当前子树\n切换策略"]
+    VERIFY -->|"失败 & 重试耗尽"| BEST["使用历史最优结果"]
+
+    REPLAN --> EXEC
+    PASS & ROLLBACK & BEST --> NEXT{"还有未完成\n子任务?"}
+    NEXT -->|是| LOOP
+    NEXT -->|否| RESULT(["输出最终结果"])
+```
+
+---
+
+## 模块依赖
+
+```mermaid
+graph LR
+    cli --> planner
+    cli --> memory
+    cli --> tools
+    cli --> plugins
+    cli --> core
+
+    planner --> core
+    planner --> tools
+    planner --> memory
+
+    plugins --> core
+    memory --> core
+    tools --> core
+
+    subgraph core
+        Model["Model\nAgentTask · Plan · Message"]
+        LLM["LLMClient\nOpenAI 兼容"]
+        Config["AgentConfig\n统一配置"]
+    end
+```
+
+---
+
+## 记忆树结构
+
+```mermaid
+graph TD
+    ROOT(["MemoryStore\nSQLite"])
+
+    ROOT --> CODE["code"]
+    ROOT --> FILE["file"]
+    ROOT --> WEB["web"]
+    ROOT --> DATA["data"]
+    ROOT --> OTHER["other …"]
+
+    CODE --> SCALA["code/scala"]
+    CODE --> PYTHON["code/python"]
+
+    SCALA --> ZIO["code/scala/zio\n内容: 执行结果 + 评分"]
+    SCALA --> CONCURRENT["code/scala/concurrency"]
+    PYTHON --> FIB["code/python/fibonacci\n内容: 执行结果 + 评分"]
+
+    FILE --> READ["file/read"]
+    FILE --> WRITE["file/write"]
+    WEB --> SEARCH["web/search"]
+    WEB --> FETCH["web/fetch"]
+
+    style ROOT fill:#4a4a8a,color:#fff
+    style CODE fill:#2d6a4f,color:#fff
+    style FILE fill:#2d6a4f,color:#fff
+    style WEB fill:#2d6a4f,color:#fff
+    style DATA fill:#2d6a4f,color:#fff
+    style OTHER fill:#555,color:#fff
+```
+
+---
+
+## Verifier 四维评分
+
+```mermaid
+graph LR
+    subgraph 四个维度
+        R["result\n任务结果是否达到目标\n权重 × 0.5"]
+        P["process\n执行过程是否合理\n权重 × 0.2"]
+        Q["quality\n输出质量\n权重 × 0.3"]
+        C["compliance\n合规检查\n一票否决"]
+    end
+
+    R & P & Q --> COMP["composite\n= result×0.5 + process×0.2 + quality×0.3"]
+    C -->|"passed=false"| VETO(["ComplianceVeto\n立即终止整个任务"])
+    COMP --> JUDGE{"overallPassed?"}
+    JUDGE -->|"composite >= threshold\n& compliance passed"| OK(["✅ 通过"])
+    JUDGE -->|"失败"| RETRY["触发 Replan / 回滚"]
+```
+
+---
+
+## 发布方式
+
+```mermaid
+graph LR
+    SRC["Scala 3 源码"]
+
+    SRC -->|"sbt cli/assembly"| JAR["fat jar\nai-agent.jar (33MB)"]
+    SRC -->|"sbt cli/nativeImage"| BIN["原生二进制\ndist/ai-agent (54MB)"]
+
+    JAR --> RUN_B["run.sh\n自动查找 Java 11+"]
+    RUN_B --> JRE_B["① bundled JRE\nruntime/ (48MB)\nbuild-runtime.sh 生成"]
+    RUN_B --> JRE_S["② 系统 Java 11+"]
+
+    BIN --> RUN_A["直接运行\n零依赖\n启动 < 100ms"]
+
+    style BIN fill:#2d6a4f,color:#fff
+    style RUN_A fill:#2d6a4f,color:#fff
+    style JRE_B fill:#1b4332,color:#fff
+```
+
+---
+
+## 目录结构
+
+```
+ai-cli/
+├── core/           数据模型 + LLMClient + AgentConfig
+├── memory/         SQLite 树形记忆 (MemoryStore)
+├── tools/          内置工具 (ReadFile/WriteFile/Edit/Shell/ListDir)
+├── plugins/        插件系统 (WebSearch/WebFetch)
+├── planner/        Planner · Verifier · AgentExecutor
+│                   SessionStore · ExecutionLogger · MemoryIndexer
+├── cli/            入口 Main · TUI · Printer
+│
+├── run.sh              运行脚本（自动选 JRE）
+├── build-runtime.sh    生成捆绑 JRE（方案 B）
+├── build-native.sh     编译原生二进制（方案 A）
+├── native-image-configs/  GraalVM 反射/JNI 配置
+├── runtime/        捆绑 JRE（jlink 精简，48MB，gitignore）
+├── dist/           原生二进制输出（gitignore）
+└── .graalvm/       GraalVM CE（gitignore）
+```
+
+---
+
+## 功能实现状态
+
+| 模块 | 功能 | 状态 |
+|------|------|------|
+| 执行引擎 | Plan-first：先规划再执行 | ✅ |
+| 执行引擎 | 多路径候选，自动选最优 | ✅ |
+| 执行引擎 | Verifier 四维评分 | ✅ |
+| 执行引擎 | 动态 replan，防止钻牛角尖 | ✅ |
+| 执行引擎 | 退化熔断，回滚最优结果 | ✅ |
+| 执行引擎 | ComplianceVeto 一票否决 | ✅ |
+| 执行引擎 | 断点续跑（SessionStore） | ✅ |
+| 记忆 | SQLite 树形结构 | ✅ |
+| 记忆 | LLM 推断 key 层级，自动写入 | ✅ |
+| 记忆 | 跨 Session 记忆召回注入规划 | ✅ |
+| 工具 | file_read / write / edit / shell / list_dir | ✅ |
+| 插件 | WebSearch（DuckDuckGo/Serper/SearXNG） | ✅ |
+| 插件 | WebFetch（HTML→文本） | ✅ |
+| LLM | OpenAI 兼容接口，支持 tool calling | ✅ |
+| LLM | DeepSeek reasoning_content 透传 | ✅ |
+| TUI | JLine3，行编辑、历史、彩色、/help 等命令 | ✅ |
+| 配置 | 统一 AgentConfig，config.json > env > 默认值 | ✅ |
+| 日志 | JSONL 事件日志（ExecutionLogger） | ✅ |
+| 发布 | 捆绑 JRE（jlink，方案 B） | ✅ |
+| 发布 | GraalVM 原生二进制（方案 A） | ✅ |
+| UI | WebUI | ⬜ 待规划 |
+| 记忆 | 向量数据库（扩展） | ⬜ 待规划 |

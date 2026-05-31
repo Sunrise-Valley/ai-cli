@@ -1,0 +1,36 @@
+[
+  {
+    "name": "org.slf4j.impl.StaticLoggerBinder",
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.slf4j.LoggerFactory",
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "org.jline.terminal.impl.AbstractTerminal",
+    "allDeclaredConstructors": true,
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "org.jline.terminal.impl.DumbTerminal",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jline.terminal.impl.PosixPtyTerminal",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.jline.terminal.impl.jansi.JansiTerminalProvider",
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "java.lang.Thread",
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "java.lang.Runtime",
+    "allDeclaredMethods": true
+  }
+]

@@ -1,0 +1,18 @@
+target/
+.bsp/
+.metals/
+.idea/
+*.class
+*.log
+
+# 捆绑 JRE（平台相关，由 build-runtime.sh 生成）
+runtime/
+
+# GraalVM（由 build-native.sh 下载，体积较大）
+.graalvm/
+
+# 原生二进制输出（平台相关）
+dist/
+
+# 敏感配置
+.env

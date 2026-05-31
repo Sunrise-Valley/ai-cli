@@ -1,0 +1,13 @@
+{
+  "resources": {
+    "includes": [
+      {"pattern": "\\Qreference.conf\\E"},
+      {"pattern": "\\QMETA-INF/services/.*\\E"},
+      {"pattern": "\\Qorg/jline/utils/.*\\E"},
+      {"pattern": "\\Qorg/sqlite/.*\\.so\\E"},
+      {"pattern": "\\Qorg/sqlite/.*\\.dylib\\E"},
+      {"pattern": "\\Qorg/sqlite/.*\\.dll\\E"}
+    ]
+  },
+  "bundles": []
+}

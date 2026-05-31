@@ -1,0 +1,26 @@
+[
+  {
+    "name": "org.sqlite.core.NativeDB",
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true,
+    "allDeclaredConstructors": true
+  },
+  {
+    "name": "org.sqlite.core.DB",
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.sqlite.BusyHandler",
+    "allDeclaredMethods": true
+  },
+  {
+    "name": "org.sqlite.Function",
+    "allDeclaredMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "org.sqlite.ProgressHandler",
+    "allDeclaredMethods": true
+  }
+]
